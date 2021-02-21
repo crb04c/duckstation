@@ -1,4 +1,5 @@
 #include "settingsdialog.h"
+#include "achievementsettingswidget.h"
 #include "advancedsettingswidget.h"
 #include "audiosettingswidget.h"
 #include "biossettingswidget.h"
@@ -37,6 +38,7 @@ SettingsDialog::SettingsDialog(QtHostInterface* host_interface, QWidget* parent 
   m_enhancement_settings = new EnhancementSettingsWidget(host_interface, m_ui.settingsContainer, this);
   m_post_processing_settings = new PostProcessingSettingsWidget(host_interface, m_ui.settingsContainer, this);
   m_audio_settings = new AudioSettingsWidget(host_interface, m_ui.settingsContainer, this);
+  m_achievement_settings = new AchievementSettingsWidget(host_interface, m_ui.settingsContainer, this);
   m_advanced_settings = new AdvancedSettingsWidget(host_interface, m_ui.settingsContainer, this);
 
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::GeneralSettings), m_general_settings);
@@ -51,6 +53,7 @@ SettingsDialog::SettingsDialog(QtHostInterface* host_interface, QWidget* parent 
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::EnhancementSettings), m_enhancement_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::PostProcessingSettings), m_post_processing_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::AudioSettings), m_audio_settings);
+  m_ui.settingsContainer->insertWidget(static_cast<int>(Category::AchievementSettings), m_achievement_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::AdvancedSettings), m_advanced_settings);
 
   m_ui.settingsCategory->setCurrentRow(0);

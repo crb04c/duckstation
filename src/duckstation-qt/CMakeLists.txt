@@ -6,6 +6,12 @@ set(SRCS
   resources/resources.qrc
   aboutdialog.cpp
   aboutdialog.h
+  achievementlogindialog.cpp
+  achievementlogindialog.h
+  achievementlogindialog.ui
+  achievementsettingswidget.cpp
+  achievementsettingswidget.h
+  achievementsettingswidget.ui
   advancedsettingswidget.cpp
   advancedsettingswidget.h
   advancedsettingswidget.ui

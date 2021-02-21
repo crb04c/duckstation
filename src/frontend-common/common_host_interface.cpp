@@ -43,6 +43,10 @@
 #include "discord_rpc.h"
 #endif
 
+#ifdef WITH_CHEEVOS
+#include "cheevos.h"
+#endif
+
 #ifdef WIN32
 #include "common/windows_headers.h"
 #include <KnownFolders.h>
@@ -89,6 +93,14 @@ bool CommonHostInterface::Initialize()
 
   CreateImGuiContext();
 
+#ifdef WITH_CHEEVOS
+  if (g_settings.cheevos_enabled)
+  {
+    if (!Cheevos::Initialize(this))
+      ReportError("Failed to initialize cheevos.");
+  }
+#endif
+
   return true;
 }
 
@@ -100,6 +112,10 @@ void CommonHostInterface::Shutdown()
 
 #ifdef WITH_DISCORD_PRESENCE
   ShutdownDiscordPresence();
+#endif
+
+#ifdef WITH_CHEEVOS
+  Cheevos::Shutdown();
 #endif
 
   if (m_controller_interface)
@@ -127,11 +143,17 @@ void CommonHostInterface::InitializeUserDirectory()
 
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("bios").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("cache").c_str(), false);
+  result &= FileSystem::CreateDirectory(
+    GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_badge").c_str(), false);
+  result &= FileSystem::CreateDirectory(
+    GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_gameicon").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("cheats").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("covers").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump/audio").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump/textures").c_str(), false);
+  result &=
+    FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "audio").c_str(), false);
+  result &=
+    FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "textures").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("inputprofiles").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("memcards").c_str(), false);
   result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("savestates").c_str(), false);
@@ -438,6 +460,11 @@ void CommonHostInterface::PollAndUpdate()
 {
 #ifdef WITH_DISCORD_PRESENCE
   PollDiscordPresence();
+#endif
+
+#ifdef WITH_CHEEVOS
+  if (Cheevos::IsActive())
+    Cheevos::Update();
 #endif
 }
 
@@ -921,6 +948,11 @@ void CommonHostInterface::OnRunningGameChanged(const std::string& path, CDImage*
 #ifdef WITH_DISCORD_PRESENCE
   UpdateDiscordPresence();
 #endif
+
+#ifdef WITH_CHEEVOS
+  if (Cheevos::IsLoggedIn())
+    Cheevos::GameChanged(path, image);
+#endif
 }
 
 void CommonHostInterface::OnControllerTypeChanged(u32 slot)
@@ -1073,14 +1105,14 @@ void CommonHostInterface::AcquirePendingOSDMessages()
   // we just want to force the compiler to always reload the deque size value from memory.
   //
   // ARM doesn't have good atomic read guarantees so it _could_ read some non-zero value here spuriously,
-  // but that's OK because we lock the mutex later and recheck things anyway. This early out will still 
+  // but that's OK because we lock the mutex later and recheck things anyway. This early out will still
   // avoid 99.99% of the unnecessary lock attempts when size == 0.
 
   std::atomic_thread_fence(std::memory_order_consume);
   if (!m_osd_posted_messages.empty())
   {
     std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-    for(;;)
+    for (;;)
     {
       // lock-and-copy mechanism.
       // this allows us to unlock the deque and minimize time that the mutex is held.
@@ -1119,30 +1151,29 @@ void CommonHostInterface::DrawOSDMessages()
   float position_x = margin;
   float position_y = margin;
 
-  EnumerateOSDMessages(
-    [max_width, spacing, padding, rounding, &position_x, &position_y](const std::string& message, float time_remaining) -> bool {
-      const float opacity = std::min(time_remaining, 1.0f);
+  EnumerateOSDMessages([max_width, spacing, padding, rounding, &position_x, &position_y](const std::string& message,
+                                                                                         float time_remaining) -> bool {
+    const float opacity = std::min(time_remaining, 1.0f);
 
-      if (position_y >= ImGui::GetIO().DisplaySize.y)
-        return false;
+    if (position_y >= ImGui::GetIO().DisplaySize.y)
+      return false;
 
-      const ImVec2 pos(position_x, position_y);
-      const ImVec2 text_size(ImGui::CalcTextSize(message.c_str(), nullptr, false, max_width));
-      const ImVec2 size(text_size.x + padding * 2.0f, text_size.y + padding * 2.0f);
-      const ImVec4 text_rect(pos.x + padding, pos.y + padding, pos.x + size.x - padding, pos.y + size.y - padding);
+    const ImVec2 pos(position_x, position_y);
+    const ImVec2 text_size(ImGui::CalcTextSize(message.c_str(), nullptr, false, max_width));
+    const ImVec2 size(text_size.x + padding * 2.0f, text_size.y + padding * 2.0f);
+    const ImVec4 text_rect(pos.x + padding, pos.y + padding, pos.x + size.x - padding, pos.y + size.y - padding);
 
-      ImDrawList* dl = ImGui::GetBackgroundDrawList();
-      ImFont* font = ImGui::GetFont();
-      dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_WindowBg, opacity),
-                        rounding);
-      dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_Border), rounding);
-      dl->AddText(font, font->FontSize, ImVec2(text_rect.x, text_rect.y), ImGui::GetColorU32(ImGuiCol_Text, opacity),
-                  message.c_str(), nullptr, max_width, &text_rect);
-      position_y += size.y + spacing;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_WindowBg, opacity),
+                      rounding);
+    dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_Border), rounding);
+    dl->AddText(font, font->FontSize, ImVec2(text_rect.x, text_rect.y), ImGui::GetColorU32(ImGuiCol_Text, opacity),
+                message.c_str(), nullptr, max_width, &text_rect);
+    position_y += size.y + spacing;
 
-      return true;
-    }
-  );
+    return true;
+  });
 }
 
 void CommonHostInterface::DrawDebugWindows()
@@ -2574,6 +2605,19 @@ void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
                       g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
                       g_settings.log_to_file);
   }
+
+#ifdef WITH_CHEEVOS
+  if (g_settings.cheevos_enabled != old_settings.cheevos_enabled ||
+      g_settings.cheevos_test_mode != old_settings.cheevos_test_mode)
+  {
+    Cheevos::Shutdown();
+    if (g_settings.cheevos_enabled)
+    {
+      if (!Cheevos::Initialize(this))
+        ReportError("Failed to initialize cheevos after settings change.");
+    }
+  }
+#endif
 
   UpdateInputMap();
 }
